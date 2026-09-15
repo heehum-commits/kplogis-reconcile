@@ -165,6 +165,15 @@
   .alert{border-radius:3px;padding:12px 15px;font-size:13px;margin-bottom:12px;line-height:1.7}
   .alert.warn{background:var(--warn-soft);border:1px solid #f0d88a;border-left:3px solid var(--warn);color:#8a6414}
   .alert.info{background:var(--brand-soft);border:1px solid #cfe1f2;border-left:3px solid var(--brand);color:var(--brand-dark)}
+  .alert.bad{background:var(--bad-soft);border:1px solid #f5c6c6;border-left:3px solid var(--bad);color:#8f2020}
+  .alert a{color:inherit;font-weight:700}
+
+  /* 키가 없으면 AI 버튼이 흐려 보이고, 눌렀을 때 키 칸이 깜빡인다 */
+  .aibtn.needkey{opacity:.5}
+  @keyframes flashred{0%,100%{box-shadow:0 0 0 0 rgba(192,38,38,0)}
+    25%,75%{box-shadow:0 0 0 4px rgba(192,38,38,.35)}}
+  .ai-key input.flash{animation:flashred 1s ease-in-out 2;border-color:var(--bad)}
+  .gstatus-big{font-size:13.5px;font-weight:700;padding:10px 0 0}
 
   .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:3px;background:#fff}
   table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
@@ -473,12 +482,18 @@
         <div class="f"><label>&nbsp;</label>
           <label class="sw"><input type="checkbox" id="gsave" checked> 이 PC에 키 기억</label></div>
       </div>
-      <div class="status">키는 이 PC 브라우저에만 저장되고 HTML 파일 안에는 들어가지 않습니다. 무료 발급 → aistudio.google.com/apikey</div>
+      <div class="status">키는 이 PC 브라우저에만 저장되고 HTML 파일 안에는 들어가지 않습니다.</div>
+
+      <div class="alert bad" id="gNeedKey" style="display:none">
+        🔑 <b>AI 기능을 쓰려면 위 칸에 제미나이 API 키를 먼저 넣어주세요.</b><br>
+        키가 없으면 아래 버튼을 눌러도 아무 일도 일어나지 않습니다.
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">구글 AI 스튜디오에서 무료로 받기 →</a>
+      </div>
 
       <div class="rowbtns" style="margin-top:14px">
-        <button onclick="askAI('report')">📄 요약 보고문 만들기</button>
-        <button onclick="askAI('ask')">✉️ 담당자 확인 요청 문구</button>
-        <button onclick="askAI('cause')">🔍 차이 원인 추정</button>
+        <button class="aibtn" onclick="askAI('report')">📄 요약 보고문 만들기</button>
+        <button class="aibtn" onclick="askAI('ask')">✉️ 담당자 확인 요청 문구</button>
+        <button class="aibtn" onclick="askAI('cause')">🔍 차이 원인 추정</button>
         <button class="ghost" onclick="togglePreview()">👁 보낼 내용 미리보기</button>
       </div>
       <div class="status" id="gStatus"></div>
@@ -832,7 +847,7 @@ function run(){
     render(A, B);
     // 새로 대조하면 이전 AI 결과는 지운다 (옛 결과를 새 결과로 착각하지 않게)
     $('gOutBox').style.display='none'; $('gPrevBox').style.display='none';
-    $('gStatus').className='status'; $('gStatus').textContent='';
+    $('gStatus').className='status'; $('gStatus').textContent=''; updateKeyState();
     $('resultArea').style.display='block';
     st.className='status good';
     st.textContent = `대조 완료 — 담당자분 ${A.items.length}건 · TMS ${B.items.length}건`;
@@ -1037,6 +1052,22 @@ function loadSample(){
 const GKEY_STORE = 'kp_gemini_key';
 try{ const k = localStorage.getItem(GKEY_STORE); if(k) $('gkey').value = k; }catch(e){}
 
+// 키가 없으면 왜 안 되는지 화면에 바로 보이게 한다
+function updateKeyState(){
+  const has = $('gkey').value.trim().length > 0;
+  $('gNeedKey').style.display = has ? 'none' : 'block';
+  document.querySelectorAll('#aiSec .aibtn').forEach(b => b.classList.toggle('needkey', !has));
+}
+$('gkey').addEventListener('input', updateKeyState);
+updateKeyState();
+
+function flashKey(){
+  const el = $('gkey');
+  el.scrollIntoView({behavior:'smooth', block:'center'});
+  el.focus();
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+}
+
 // 구글로 보낼 내용을 만든다. 여기 담기는 것 외에는 아무것도 나가지 않는다.
 function aiData(){
   if(!RESULT.length) return null;
@@ -1134,13 +1165,21 @@ async function askAI(mode){
   const model = $('gmodel').value;
 
   const d = aiData();
-  if(!d){ st.className='status err'; st.textContent='먼저 대조를 실행해 주세요.'; return; }
-  if(!key){ st.className='status err'; st.textContent='제미나이 API 키를 먼저 넣어주세요. (aistudio.google.com/apikey 에서 무료 발급)'; return; }
+  if(!d){ st.className='status err gstatus-big'; st.textContent='⚠ 먼저 위에서 [대조 실행하기]를 눌러주세요.'; return; }
+  if(!key){
+    st.className='status err gstatus-big';
+    st.textContent='⚠ 제미나이 API 키가 비어 있습니다. 위 칸(깜빡이는 곳)에 키를 붙여넣어 주세요.';
+    updateKeyState();
+    flashKey();
+    return;
+  }
 
   try{ if($('gsave').checked) localStorage.setItem(GKEY_STORE, key); else localStorage.removeItem(GKEY_STORE); }catch(e){}
+  updateKeyState();
 
   const prompt = PROMPTS[mode](d);
   $('gPrev').textContent = prompt;
+  st.className='status gstatus-big';
   st.innerHTML = '<span class="spin"></span>제미나이에 보내는 중… (보통 5~15초 걸립니다)';
   document.querySelectorAll('#aiSec button').forEach(b=>b.disabled=true);
 
@@ -1166,10 +1205,10 @@ async function askAI(mode){
     $('gOutTitle').textContent = TITLES[mode] + ' · ' + model;
     $('gOut').textContent = text.trim();
     $('gOutBox').style.display='block';
-    st.className='status good'; st.textContent='완성됐습니다. 내용을 확인하고 복사해서 쓰세요.';
+    st.className='status good gstatus-big'; st.textContent='✅ 완성됐습니다. 아래 내용을 확인하고 복사해서 쓰세요.';
     $('gOutBox').scrollIntoView({behavior:'smooth', block:'nearest'});
   }catch(e){
-    st.className='status err';
+    st.className='status err gstatus-big';
     st.textContent = (e instanceof TypeError)
       ? '⚠ 인터넷에 연결하지 못했습니다. 회사 방화벽이 막고 있거나 인터넷이 끊겼을 수 있습니다.'
       : '⚠ ' + e.message;
